@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ImpactSphere – Offline Lite (No Babel)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- htm (JSX alternative) -->
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+  <!-- Optional: Framer Motion UMD (if it loads) -->
+  <script src="https://unpkg.com/framer-motion@10/dist/framer-motion.umd.js"></script>
+  <!-- Leaflet CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html,body,#root{height:100%;}
+    .leaflet-container { height: 320px; width: 100%; border-radius: 16px; }
+  </style>
+</head>
+<body class="bg-slate-50">
+  <div id="root"></div>
+  <script>
+    (function(){
+      const { useState, useMemo, useReducer, useContext, createContext, useEffect, useRef } = React;
+      const { motion, AnimatePresence } = window.framerMotion || {};
+      const html = htm.bind(React.createElement);
+
+      // Theme
+      const THEMES = {
+        impact: { name: "ImpactSphere", primaryBg: "bg-[#1F6FEB]", primaryBgHover: "hover:bg-[#1A56D9]", primaryText: "text-[#1F6FEB]", softBg: "bg-[#E0F2FE]", softText: "text-[#1F6FEB]", softRing: "border-[#A5D8FF]", ghostText: "text-[#1F6FEB]", ghostHover: "hover:bg-[#EAF4FF]" },
+        indigo: { name: "Indigo", primaryBg: "bg-indigo-600", primaryBgHover: "hover:bg-indigo-700", primaryText: "text-indigo-600", softBg: "bg-indigo-50", softText: "text-indigo-700", softRing: "border-indigo-200", ghostText: "text-indigo-700", ghostHover: "hover:bg-indigo-50" },
+        ocean: { name: "Ocean", primaryBg: "bg-sky-600", primaryBgHover: "hover:bg-sky-700", primaryText: "text-sky-600", softBg: "bg-sky-50", softText: "text-sky-700", softRing: "border-sky-200", ghostText: "text-sky-700", ghostHover: "hover:bg-sky-50" },
+        sunset: { name: "Sunset", primaryBg: "bg-rose-600", primaryBgHover: "hover:bg-rose-700", primaryText: "text-rose-600", softBg: "bg-rose-50", softText: "text-rose-700", softRing: "border-rose-200", ghostText: "text-rose-700", ghostHover: "hover:bg-rose-50" },
+        forest: { name: "Forest", primaryBg: "bg-emerald-600", primaryBgHover: "hover:bg-emerald-700", primaryText: "text-emerald-600", softBg: "bg-emerald-50", softText: "text-emerald-700", softRing: "border-emerald-200", ghostText: "text-emerald-700", ghostHover: "hover:bg-emerald-50" },
+        royal: { name: "Royal", primaryBg: "bg-violet-700", primaryBgHover: "hover:bg-violet-800", primaryText: "text-violet-700", softBg: "bg-violet-50", softText: "text-violet-700", softRing: "border-violet-200", ghostText: "text-violet-700", ghostHover: "hover:bg-violet-50" }
+      };
+      const ThemeCtx = createContext(THEMES.impact);
+      const useTheme = () => useContext(ThemeCtx);
+
+      const SDG_COLORS = { 3: "bg-[#D1FAE5] text-[#047857] ring-[#6EE7B7]", 4: "bg-[#DBEAFE] text-[#1E40AF] ring-[#93C5FD]", 5: "bg-[#FCE7F3] text-[#BE185D] ring-[#FBCFE8]", 13: "bg-[#ECFDF5] text-[#065F46] ring-[#A7F3D0]", 16: "bg-[#EEF2FF] text-[#4338CA] ring-[#C7D2FE]" };
+
+      const LEVELS = [
+        { id: 1, title: "Identify a real problem", icon: "🎯", xp: 50, summary: "Map a concrete challenge in your community and who is affected.",
+          quiz: { question: "Which describes a problem, not a solution?", options: ["Run 10 workshops","Teen girls lack access to reliable menstrual health info","Launch an app","Plant 500 trees"], correctIndex: 1 },
+          action: "Write a 2–3 sentence problem statement with who/where/why it matters.",
+          tasks: ["Talk to 3 people affected","Write 2–3 sentence problem","List 1–2 root causes"]
+        },
+        { id: 2, title: "Verify information (MIL)", icon: "📚", xp: 70, summary: "Practice fact-checking and basic AI/deepfake red flags.",
+          quiz: { question: "Strongest verification triad:", options: ["One anonymous blog","Two social posts + 1 meme","Gov stats + peer-review + NGO report","A viral video only"], correctIndex: 2 },
+          action: "Verify one claim relevant to your project and paste the 3 sources you used.",
+          tasks: ["Find a government stat","Find a peer‑reviewed source","Find an NGO report"]
+        },
+        { id: 3, title: "Design a data-based solution", icon: "🧠", xp: 80, summary: "Use simple data to choose a solution with highest potential.",
+          quiz: { question: "To reduce bias do…", options: ["Pick the coolest idea","Ask only friends","Compare ideas against same data/criteria","Wait for trends"], correctIndex: 2 },
+          action: "List 2–3 solution options and pick one using impact/cost/feasibility.",
+          tasks: ["List 3 ideas","Select criteria","Pick best by score"]
+        },
+        { id: 4, title: "5 Dimensions + MEL Tools", icon: "🏛️", xp: 100, summary: "Turn idea into a structured project (objectives & indicators).",
+          quiz: { question: "Which is SMART?", options: ["Improve education","Train 200 teens in MIL by Dec 2025; 80% pass","Be famous","Get likes"], correctIndex: 1 },
+          action: "Draft 1 SMART objective and 2 indicators (one output, one outcome).",
+          tasks: ["Draft 1 SMART objective","Define 2 indicators","List 2 risks + mitigation"]
+        },
+        { id: 5, title: "Alliances & advocacy", icon: "🤝", xp: 70, summary: "Map allies and craft a 30s pitch.",
+          quiz: { question: "A good 30s pitch starts with…", options: ["Jokes","Clear problem + who is affected","Your bio only","Budget details"], correctIndex: 1 },
+          action: "Write a 30s pitch: problem, solution, ask to a specific ally.",
+          tasks: ["List 3 allies","Define roles & value","Write 30s pitch"]
+        },
+        { id: 6, title: "Scale & measure impact", icon: "📊", xp: 90, summary: "Create a tiny dashboard: baseline, target and timeline.",
+          quiz: { question: "A learning loop means…", options: ["Never change the plan","Collect data, reflect, adapt","Hide bad results","Only celebrate wins"], correctIndex: 1 },
+          action: "Define baseline & target for 2 indicators and a monthly check-in.",
+          tasks: ["Define baseline","Set target","Draft timeline"]
+        },
+      ];
+
+      const SDGS = [
+        { id: 4, name: "Quality Education" },
+        { id: 5, name: "Gender Equality" },
+        { id: 3, name: "Health & Well-being" },
+        { id: 13, name: "Climate Action" },
+        { id: 16, name: "Peace, Justice & Institutions" },
+      ];
+
+      const initialState = {
+        user: { name: "Guest", country: "Ecuador" },
+        theme: "impact",
+        xp: 0,
+        medals: [],
+        completedLevels: {},
+        project: {
+          title: "Untitled Project",
+          sdg: 4,
+          location: { country: "Ecuador", city: "Quito" },
+          problem: "", verificationSources: [], solutionOptions: [], chosenSolution: "",
+          smartObjective: "", indicators: { output: "", outcome: "" },
+          actors: "", pitch30: "", baseline: "", target: "", timeline: "", risks: ""
+        },
+        collaborate: { rooms: SDGS.map(s => ({ sdg: s.id, name: s.name, messages: [] })) },
+        weeklyChallenge: { title: "Fact-Check Sprint", description: "Verify a trending claim using 3 credible sources and post your summary.", rewardXp: 120, submitted: false },
+        seedFundSubmitted: false,
+      };
+
+      function reducer(state, action) {
+        switch (action.type) {
+          case "SET_NAME":
+            return { ...state, user: { ...state.user, name: action.name } };
+          case "SET_COUNTRY":
+            return { ...state, user: { ...state.user, country: action.country } };
+          case "SET_THEME":
+            return { ...state, theme: action.theme };
+          case "COMPLETE_LEVEL": {
+            const { levelId, actionText, passedQuiz } = action;
+            const lvl = LEVELS.find(l => l.id === levelId);
+            if (!lvl) return state;
+            const already = state.completedLevels[levelId]?.passed;
+            const gained = already ? 0 : (passedQuiz ? lvl.xp : Math.floor(lvl.xp/2));
+            const nextXp = state.xp + gained;
+            const newMedals = [...state.medals];
+            if (!already && passedQuiz) {
+              if (levelId === 2) newMedals.push({ name: "First Fact‑Check", icon: "🕵️‍♂️" });
+              if (levelId === 5) newMedals.push({ name: "Alliance Builder", icon: "🤝" });
+              if (levelId === 6) newMedals.push({ name: "Impact Tracker", icon: "📊" });
+            }
+            return {
+              ...state, xp: nextXp, medals: newMedals,
+              completedLevels: { ...state.completedLevels, [levelId]: { ...(state.completedLevels[levelId]||{}), passed: true, actionText } }
+            };
+          }
+          case "TOGGLE_TASK": {
+            const { levelId, index, done } = action;
+            const lvl = LEVELS.find(l => l.id === levelId);
+            const taskCount = (lvl?.tasks?.length) || 0;
+            const prev = state.completedLevels[levelId]?.taskDone || Array(taskCount).fill(false);
+            const next = prev.slice(); next[index] = done;
+            return {
+              ...state,
+              completedLevels: {
+                ...state.completedLevels,
+                [levelId]: { ...(state.completedLevels[levelId] || {}), taskDone: next }
+              }
+            };
+          }
+          case "UPDATE_PROJECT":
+            return { ...state, project: { ...state.project, ...action.patch } };
+          case "POST_MESSAGE": {
+            const rooms = state.collaborate.rooms.map(r => r.sdg === action.sdg ? { ...r, messages: [...r.messages, { author: state.user.name, text: action.text, ts: new Date().toISOString() }] } : r);
+            return { ...state, collaborate: { rooms } };
+          }
+          case "SUBMIT_WEEKLY":
+            if (state.weeklyChallenge.submitted) return state;
+            return { ...state, weeklyChallenge: { ...state.weeklyChallenge, submitted: true }, xp: state.xp + state.weeklyChallenge.rewardXp };
+          case "SUBMIT_SEED":
+            return { ...state, seedFundSubmitted: true, xp: state.xp + 50 };
+          default: return state;
+        }
+      }
+
+      const ThemeProvider = (props) => {
+        return html`<${ThemeCtx.Provider} value=${THEMES[props.themeKey] || THEMES.impact}>${props.children}<//>`;
+      };
+      const useThemeStyles = () => useTheme();
+
+      const Button = (props) => {
+        const t = useThemeStyles();
+        const base = "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:opacity-50";
+        const variants = {
+          primary: t.primaryBg + " text-white " + t.primaryBgHover,
+          ghost: "bg-transparent " + t.ghostText + " " + t.ghostHover,
+          soft: t.softBg + " " + t.softText + " hover:brightness-95",
+          success: "bg-emerald-600 text-white hover:bg-emerald-700",
+          warning: "bg-amber-500 text-white hover:bg-amber-600",
+        };
+        const cls = [base, variants[props.variant || "primary"], props.className || ""].join(" ");
+        if (motion && motion.button) {
+          return html`<${motion.button} whileTap=${{scale:0.98}} whileHover=${{y:-1}} type=${props.type||"button"} onClick=${props.onClick} disabled=${props.disabled} className=${cls}>${props.children}<//>`;
+        }
+        return html`<button type=${props.type||"button"} onClick=${props.onClick} disabled=${props.disabled} className=${cls}>${props.children}</button>`;
+      };
+
+      const Card = (props) => {
+        const cls = ["rounded-3xl bg-white shadow-md ring-1 ring-black/5 p-5", props.className||""].join(" ");
+        if (motion && motion.div) {
+          return html`<${motion.div} initial=${{opacity:0,y:8}} animate=${{opacity:1,y:0}} transition=${{duration:0.25}} className=${cls}>${props.children}<//>`;
+        }
+        return html`<div className=${cls}>${props.children}</div>`;
+      };
+
+      const SectionTitle = (props) => {
+        const t = useThemeStyles();
+        const box = html`<div className=${["inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-sm", t.primaryBg].join(" ")}><span className="text-base">${props.icon}</span></div>`;
+        return html`
+          <div className="flex items-center gap-3 mb-4">
+            ${box}
+            <div>
+              <h2 className="text-lg font-bold">${props.title}</h2>
+              ${props.subtitle ? html`<p className="text-sm text-slate-600">${props.subtitle}</p>` : null}
+            </div>
+          </div>
+        `;
+      };
+
+      const ProgressBar = (props) => {
+        const pct = Math.max(0, Math.min(100, props.value || 0));
+        return html`
+          <div className="w-full">
+            <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+              <div className="h-2 bg-[#1F6FEB]" style=${{width: pct + "%"}}></div>
+            </div>
+            <div className="text-xs text-slate-600 mt-1">${pct}% completed</div>
+          </div>
+        `;
+      };
+
+      const Dashboard = ({ state }) => {
+        const completed = Object.keys(state.completedLevels).filter(k=>state.completedLevels[k]?.passed).length;
+        const total = LEVELS.length;
+        const progress = Math.round((completed / total) * 100);
+        return html`
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <${Card}><div className="flex items-center gap-3"><div className="rounded-2xl bg-slate-50 p-3">🏆</div><div><div className="text-2xl font-extrabold">${state.xp}</div><div className="text-slate-600 text-sm">Total XP</div></div></div><//>
+            <${Card}><div className="flex items-center gap-3"><div className="rounded-2xl bg-slate-50 p-3">⭐</div><div><div className="text-2xl font-extrabold">${state.medals.length}</div><div className="text-slate-600 text-sm">Badges</div></div></div><//>
+            <${Card}><div className="flex items-center gap-3"><div className="rounded-2xl bg-slate-50 p-3">✅</div><div><div className="text-2xl font-extrabold">${completed}</div><div className="text-slate-600 text-sm">Completed Levels</div></div></div><//>
+
+            <${Card} className="lg:col-span-2">
+              <${SectionTitle} icon="▶️" title="Continue your journey" subtitle="Pick up where you left off" />
+              <div className="flex flex-wrap gap-2">
+                ${LEVELS.map(l => html`<span key=${l.id} className=${["px-3 py-1 rounded-full text-xs font-medium ", (state.completedLevels[l.id]?.passed ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700')].join(" ")}>${l.title}</span>`)}
+              </div>
+            <//>
+
+            <${Card}>
+              <${SectionTitle} icon="📈" title="Overall progress" subtitle="Finish levels to unlock badges & XP" />
+              <${ProgressBar} value=${progress} />
+            <//>
+
+            <${Card}>
+              <${SectionTitle} icon="💬" title="Weekly challenge" />
+              <p className="text-sm text-slate-700 mb-3">${state.weeklyChallenge.title}: ${state.weeklyChallenge.description}</p>
+              <p className="text-xs text-slate-500 mb-2">Reward: +${state.weeklyChallenge.rewardXp} XP</p>
+              <${Button} variant=${state.weeklyChallenge.submitted ? "success" : "primary"} disabled=${state.weeklyChallenge.submitted}>${state.weeklyChallenge.submitted ? "Submitted ✓" : "Submit" }<//>
+            <//>
+          </div>
+        `;
+      };
+
+      const Checklist = ({ level, state, dispatch }) => {
+        const { id, tasks = [] } = level;
+        const done = (state.completedLevels[id]?.taskDone) || Array(tasks.length).fill(false);
+        const pct = tasks.length ? Math.round(done.filter(Boolean).length / tasks.length * 100) : 0;
+        return html`
+          <div className="rounded-2xl border border-slate-200 p-4 bg-white">
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-semibold">Level tasks</p>
+              <div className="w-48"><${ProgressBar} value=${pct} /></div>
+            </div>
+            <ul className="grid gap-2">
+              ${tasks.map((t, i) => html`
+                <label key=${i} className=${["flex items-center gap-3 rounded-xl border p-3 cursor-pointer ", (done[i] ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:bg-slate-50')].join(" ")}>
+                  <input type="checkbox" className="h-4 w-4 accent-emerald-600" checked=${!!done[i]} onChange=${e=>dispatch({ type: 'TOGGLE_TASK', levelId: id, index: i, done: e.target.checked })} />
+                  <span className=${["text-sm ", (done[i] ? 'line-through text-emerald-700' : '')].join(" ")}>${t}</span>
+                </label>
+              `)}
+            </ul>
+          </div>
+        `;
+      };
+
+      const Learn = ({ state, dispatch, onCompleteLevel }) => {
+        const t = useThemeStyles();
+        const [active, setActive] = useState(LEVELS[0].id);
+        const lvl = LEVELS.find(l => l.id === active);
+        const [choice, setChoice] = useState(null);
+        const [actionText, setActionText] = useState("");
+        const passed = state.completedLevels[active]?.passed;
+
+        const tasks = lvl.tasks || [];
+        const taskDone = state.completedLevels[lvl.id]?.taskDone || Array(tasks.length).fill(false);
+        const allDone = tasks.length ? taskDone.every(Boolean) : true;
+
+        return html`
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <${Card} className="lg:col-span-1">
+              <${SectionTitle} icon="📘" title="Levels" subtitle="Unlock by learning & doing" />
+              <ul className="space-y-2">
+                ${LEVELS.map(l => html`
+                  <li key=${l.id}>
+                    <button onClick=${() => setActive(l.id)} className=${["w-full text-left px-4 py-3 rounded-2xl border transition ", (active === l.id ? t.softBg + " " + t.softRing : 'bg-white border-slate-200 hover:bg-slate-50')].join(" ")}>
+                      <div className="flex items-center gap-2">
+                        <div className=${t.primaryText}><span>${l.icon}</span></div>
+                        <div>
+                          <div className="font-semibold">${l.title}</div>
+                          <div className="text-xs text-slate-600">${l.summary}</div>
+                        </div>
+                      </div>
+                      ${state.completedLevels[l.id]?.passed ? html`<div className="mt-1 text-emerald-700 text-xs">Completed • +${l.xp} XP</div>` : null}
+                    </button>
+                  </li>
+                `)}
+              </ul>
+            <//>
+
+            <${Card} className="lg:col-span-2">
+              <${SectionTitle} icon="▶️" title=${lvl.title} subtitle=${lvl.summary} />
+              <div className="space-y-4">
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm">
+                  <p className="font-semibold mb-1">Tutorial (3–4 min)</p>
+                  <p className="text-slate-700">Short video + interactive infographic (placeholder). Key ideas: focus, clarity, ethics, and MIL best practices.</p>
+                </div>
+
+                <div className="rounded-2xl bg-white border border-slate-200 p-4">
+                  <p className="font-semibold mb-2">Quick quiz</p>
+                  <p className="mb-3 text-slate-700">${lvl.quiz.question}</p>
+                  <div className="grid gap-2">
+                    ${lvl.quiz.options.map((opt, idx) => html`
+                      <label key=${idx} className=${["flex items-center gap-2 rounded-xl border p-3 cursor-pointer ", (choice===idx ? t.softRing + " " + t.softBg : 'border-slate-200 hover:bg-slate-50')].join(" ")}>
+                        <input type="radio" className="accent-indigo-600" name="q" checked=${choice===idx} onChange=${() => setChoice(idx)} />
+                        <span className="text-sm">${opt}</span>
+                      </label>
+                    `)}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-white border border-slate-200 p-4">
+                  <p className="font-semibold mb-2">Hands‑on action</p>
+                  <p className="text-slate-700 mb-3">${lvl.action}</p>
+                  <textarea value=${actionText} onChange=${e=>setActionText(e.target.value)} rows=${4} className="w-full rounded-2xl border border-slate-300 p-3 text-sm" placeholder="Write your action notes here…"></textarea>
+                </div>
+
+                <${Checklist} level=${lvl} state=${state} dispatch=${dispatch} />
+
+                <div className="flex items-center gap-3">
+                  <${Button} onClick=${() => onCompleteLevel(lvl.id, actionText, choice===lvl.quiz.correctIndex)} variant="primary" disabled=${passed || !allDone}>Mark complete ${passed ? "✓" : "+XP"}<//>
+                  ${passed ? html`<span className="text-emerald-700 text-sm">Level completed! XP added.</span>` : null}
+                </div>
+              </div>
+            <//>
+          </div>
+        `;
+      };
+
+      const Build = ({ state, dispatch, onOpenSeed }) => {
+        const p = state.project;
+        const patch = (newFields) => dispatch({ type: "UPDATE_PROJECT", patch: newFields });
+
+        const printAsPdf = () => {
+          const w = window.open("", "_blank");
+          if (!w) return;
+          const htmlDoc = `<!doctype html><html><head><meta charset='utf-8'><title>${p.title}</title>
+            <style>body{font-family: ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; padding:24px; color:#0f172a} h1{font-size:22px} h2{margin-top:12px;font-size:14px}</style>
+          </head><body>
+            <h1>${p.title}</h1>
+            <p>${state.user.name} • ${state.user.country} • SDG ${p.sdg} • ${p.location.city}, ${p.location.country}</p>
+            <hr/>
+            <h2>Problem statement</h2><p>${p.problem || "—"}</p>
+            <h2>Verification sources</h2><ul>${(p.verificationSources||[]).map(s=>`<li>${s}</li>`).join("")}</ul>
+            <h2>Chosen solution</h2><p>${p.chosenSolution || "—"}</p>
+            <h2>SMART objective</h2><p>${p.smartObjective || "—"}</p>
+            <h2>Indicators</h2><p>Output: ${p.indicators.output || "—"}</p><p>Outcome: ${p.indicators.outcome || "—"}</p>
+            <h2>Actors & allies</h2><p>${p.actors || "—"}</p>
+            <h2>30s pitch</h2><p>${p.pitch30 || "—"}</p>
+            <h2>Impact & monitoring</h2><p>Baseline: ${p.baseline || "—"} • Target: ${p.target || "—"}</p>
+            <p>Timeline: ${p.timeline || "—"}</p>
+            <p>Risks: ${p.risks || "—"}</p>
+          </body></html>`;
+          w.document.write(htmlDoc);
+          w.document.close();
+          w.focus();
+          w.print();
+        };
+
+        return html`
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <${Card}>
+              <${SectionTitle} icon="🧩" title="Project wizard" subtitle="Build your project step by step" />
+              <div className="grid gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Project title" value=${p.title} onChange=${e=>patch({ title: e.target.value })} />
+                  <select className="rounded-2xl border border-slate-300 p-2" value=${p.sdg} onChange=${e=>patch({ sdg: Number(e.target.value) })}>
+                    ${SDGS.map(s => html`<option key=${s.id} value=${s.id}>SDG ${s.id} – ${s.name}</option>`)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="City" value=${p.location.city} onChange=${e=>patch({ location: { ...p.location, city: e.target.value } })} />
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Country" value=${p.location.country} onChange=${e=>patch({ location: { ...p.location, country: e.target.value } })} />
+                </div>
+                <textarea className="rounded-2xl border border-slate-300 p-2" rows=${3} placeholder="Problem statement" value=${p.problem} onChange=${e=>patch({ problem: e.target.value })}></textarea>
+                <div>
+                  <label className="text-sm font-semibold">Verification sources (add one per line):</label>
+                  <textarea className="mt-1 rounded-2xl border border-slate-300 p-2" rows=${2} placeholder="https:// …" value=${(p.verificationSources||[]).join("\n")} onChange=${e=>patch({ verificationSources: e.target.value.split("\n").filter(Boolean) })}></textarea>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <textarea className="rounded-2xl border border-slate-300 p-2" rows=${3} placeholder="List 2–3 solution options" value=${(p.solutionOptions||[]).join("\n")} onChange=${e=>patch({ solutionOptions: e.target.value.split("\n").filter(Boolean) })}></textarea>
+                  <textarea className="rounded-2xl border border-slate-300 p-2" rows=${3} placeholder="Chosen solution" value=${p.chosenSolution} onChange=${e=>patch({ chosenSolution: e.target.value })}></textarea>
+                </div>
+                <input className="rounded-2xl border border-slate-300 p-2" placeholder="SMART objective" value=${p.smartObjective} onChange=${e=>patch({ smartObjective: e.target.value })} />
+                <div className="grid grid-cols-2 gap-3">
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Indicator (output)" value=${p.indicators.output} onChange=${e=>patch({ indicators: { ...p.indicators, output: e.target.value } })} />
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Indicator (outcome)" value=${p.indicators.outcome} onChange=${e=>patch({ indicators: { ...p.indicators, outcome: e.target.value } })} />
+                </div>
+                <textarea className="rounded-2xl border border-slate-300 p-2" rows=${2} placeholder="Actors & allies" value=${p.actors} onChange=${e=>patch({ actors: e.target.value })}></textarea>
+                <textarea className="rounded-2xl border border-slate-300 p-2" rows=${2} placeholder="30s pitch" value=${p.pitch30} onChange=${e=>patch({ pitch30: e.target.value })}></textarea>
+                <div className="grid grid-cols-3 gap-3">
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Baseline" value=${p.baseline} onChange=${e=>patch({ baseline: e.target.value })} />
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Target" value=${p.target} onChange=${e=>patch({ target: e.target.value })} />
+                  <input className="rounded-2xl border border-slate-300 p-2" placeholder="Timeline" value=${p.timeline} onChange=${e=>patch({ timeline: e.target.value })} />
+                </div>
+                <textarea className="rounded-2xl border border-slate-300 p-2" rows=${2} placeholder="Risks & mitigation" value=${p.risks} onChange=${e=>patch({ risks: e.target.value })}></textarea>
+                <div className="flex items-center gap-3">
+                  <${Button} variant="primary" onClick=${printAsPdf}>Export / Print PDF<//>
+                </div>
+              </div>
+            <//>
+
+            <${Card}>
+              <${SectionTitle} icon="🗂️" title="Preview" subtitle="This is what will be exported" />
+              <div className="p-4 bg-slate-50 rounded-2xl">
+                <div className="text-2xl font-extrabold mb-2">${p.title}</div>
+                <p className="text-sm text-slate-600 mb-4">${state.user.name} • ${state.user.country} • SDG ${p.sdg} • ${p.location.city}, ${p.location.country}</p>
+                <hr className="my-3"/>
+                <h2 className="font-bold">Problem statement</h2>
+                <p className="mb-3 text-sm">${p.problem || "—"}</p>
+                <h2 className="font-bold">Verification sources</h2>
+                <ul className="list-disc ml-6 text-sm mb-3">${(p.verificationSources||[]).map((s,i)=>`<li>${s}</li>`).join("")}</ul>
+                <h2 className="font-bold">Chosen solution</h2>
+                <p className="mb-3 text-sm">${p.chosenSolution || "—"}</p>
+                <h2 className="font-bold">SMART objective</h2>
+                <p className="mb-3 text-sm">${p.smartObjective || "—"}</p>
+                <h2 className="font-bold">Indicators</h2>
+                <p className="text-sm">Output: ${p.indicators.output || "—"}</p>
+                <p className="text-sm mb-3">Outcome: ${p.indicators.outcome || "—"}</p>
+                <h2 className="font-bold">Actors & allies</h2>
+                <p className="mb-3 text-sm">${p.actors || "—"}</p>
+                <h2 className="font-bold">30s pitch</h2>
+                <p className="mb-3 text-sm">${p.pitch30 || "—"}</p>
+                <h2 className="font-bold">Impact & monitoring</h2>
+                <p className="text-sm">Baseline: ${p.baseline || "—"} • Target: ${p.target || "—"}</p>
+                <p className="text-sm">Timeline: ${p.timeline || "—"}</p>
+                <p className="text-sm">Risks: ${p.risks || "—"}</p>
+              </div>
+            <//>
+          </div>
+        `;
+      };
+
+      const Collaborate = ({ state, dispatch }) => {
+        const [room, setRoom] = useState(state.collaborate.rooms[0].sdg);
+        const [msg, setMsg] = useState("");
+        const r = state.collaborate.rooms.find(r => r.sdg === room);
+        return html`
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <${Card}>
+              <${SectionTitle} icon="🧑‍🤝‍🧑" title="Rooms by SDG" subtitle="Join topic spaces to exchange and ally" />
+              <div className="grid gap-2">
+                ${state.collaborate.rooms.map(rr => html`
+                  <button key=${rr.sdg} onClick=${()=>setRoom(rr.sdg)} className=${["w-full text-left px-4 py-3 rounded-2xl border ",(room===rr.sdg?'bg-blue-50 border-blue-200':'bg-white border-slate-200 hover:bg-slate-50')].join(" ")}>SDG ${rr.sdg} – ${rr.name}</button>
+                `)}
+              </div>
+            <//>
+            <${Card} className="lg:col-span-2">
+              <${SectionTitle} icon="💬" title=${`Room • SDG ${r.sdg} – ${r.name}`} subtitle="Be kind. Share problems, ideas and resources." />
+              <div className="h-64 overflow-auto rounded-2xl border border-slate-200 p-3 bg-slate-50">
+                ${r.messages.length === 0 ? html`<p className="text-sm text-slate-600">No messages yet. Start the conversation ✨</p>` : html`
+                  <ul className="space-y-2">
+                    ${r.messages.map((m, i) => html`
+                      <li key=${i} className="flex items-start gap-2">
+                        <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold bg-blue-50 text-blue-700">${m.author.slice(0,2).toUpperCase()}</div>
+                        <div>
+                          <div className="text-xs text-slate-500">${new Date(m.ts).toLocaleString()}</div>
+                          <div className="text-sm">${m.text}</div>
+                        </div>
+                      </li>
+                    `)}
+                  </ul>
+                `}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <input value=${msg} onChange=${e=>setMsg(e.target.value)} className="flex-1 rounded-2xl border border-slate-300 p-2" placeholder="Share an insight, resource, or ask for allies…"/>
+                <${Button} onClick=${()=>{ if(msg.trim()) { dispatch({ type: 'POST_MESSAGE', sdg: r.sdg, text: msg.trim() }); setMsg(""); } }} variant="primary">Post<//>
+              </div>
+            <//>
+          </div>
+        `;
+      };
+
+      const Impact = ({ state }) => {
+        const mapRef = useRef(null);
+        const mapInst = useRef(null);
+        const data = [
+          { title: state.project.title, country: state.project.location.country, city: state.project.location.city, sdg: state.project.sdg, owner: state.user.name, lat: -0.2299, lng: -78.5249 }, // Quito
+          { title: "MILBoard – peer game", country: "Indonesia", city: "Yogyakarta", sdg: 4, owner: "Team ID", lat: -7.7956, lng: 110.3695 },
+          { title: "ARTiFAKE – comics", country: "Ukraine", city: "Lviv", sdg: 16, owner: "Team UA", lat: 49.8397, lng: 24.0297 },
+          { title: "Idea’s Echo – podcast", country: "Madagascar", city: "Antananarivo", sdg: 13, owner: "Team MG", lat: -18.8792, lng: 47.5079 },
+        ];
+        useEffect(() => {
+          if (mapRef.current && !mapInst.current && window.L) {
+            mapInst.current = L.map(mapRef.current).setView([0,0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(mapInst.current);
+            data.forEach(p => L.marker([p.lat, p.lng]).addTo(mapInst.current).bindPopup(`<b>${p.title}</b><br/>${p.city}, ${p.country}<br/>Owner: ${p.owner}<br/>SDG ${p.sdg}`));
+          }
+        }, [mapRef.current]);
+        return html`
+          <div className="grid grid-cols-1 gap-5">
+            <${Card}>
+              <${SectionTitle} icon="🗺️" title="Impact mini‑map" subtitle="Where projects are happening" />
+              <div ref=${mapRef} id="map" className="leaflet-container"></div>
+            <//>
+          </div>
+        `;
+      };
+
+      const Leaderboard = ({ state, onSubmitWeekly }) => {
+        const combined = useMemo(() => {
+          const copy = []; // aggregate max XP by country
+          const byCountry = {};
+          ["Ecuador","Argentina","Peru","Colombia","Chile"].forEach(c => byCountry[c] = 1200 + Math.floor(Math.random()*600));
+          byCountry[state.user.country] = Math.max(byCountry[state.user.country]||0, state.xp);
+          for (const [country, xp] of Object.entries(byCountry)) copy.push({ country, xp });
+          return copy.sort((a,b)=> b.xp - a.xp);
+        }, [state.user.country, state.xp]);
+        return html`
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <${Card}>
+              <${SectionTitle} icon="🏆" title="Country leaderboard" subtitle="Cumulative XP by participants" />
+              <ul className="divide-y">
+                ${combined.map((r,i)=> html`
+                  <li key=${i} className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-3">
+                      <span className=${["inline-flex h-8 w-8 items-center justify-center rounded-full ", (i<3? 'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-700')].join(" ")}>${i+1}</span>
+                      <span>${r.country}</span>
+                    </div>
+                    <span className="font-bold">${r.xp} XP</span>
+                  </li>
+                `)}
+              </ul>
+            <//>
+            <${Card}>
+              <${SectionTitle} icon="⭐" title="Weekly challenge" subtitle=${state.weeklyChallenge.title} />
+              <p className="text-sm text-slate-700 mb-3">${state.weeklyChallenge.description}</p>
+              <${Button} onClick=${onSubmitWeekly} variant=${state.weeklyChallenge.submitted ? 'success' : 'primary'}>
+                ${state.weeklyChallenge.submitted ? 'Submitted ✓' : `Submit • +${state.weeklyChallenge.rewardXp} XP`}
+              <//>
+            <//>
+          </div>
+        `;
+      };
+
+      const TABS = [
+        { key: "dashboard", label: "Dashboard" },
+        { key: "learn", label: "Learn" },
+        { key: "build", label: "Build" },
+        { key: "collab", label: "Collaborate" },
+        { key: "impact", label: "Impact" },
+        { key: "leader", label: "Leaderboard" },
+      ];
+
+      function App() {
+        const [state, dispatch] = useReducer(reducer, initialState);
+        const [tab, setTab] = useState("dashboard");
+        const themeKey = state.theme;
+        const theme = THEMES[themeKey] || THEMES.impact;
+
+        const onCompleteLevel = (levelId, actionText, passed) => {
+          dispatch({ type: "COMPLETE_LEVEL", levelId, actionText, passedQuiz: passed });
+        };
+        const onSubmitWeekly = () => {
+          if (!state.weeklyChallenge.submitted) dispatch({ type: "SUBMIT_WEEKLY" });
+        };
+
+        return html`
+          <${ThemeProvider} themeKey=${themeKey}>
+            <div className="min-h-screen bg-slate-50">
+              <header className="sticky top-0 z-10 border-b border-slate-200">
+                <div className="relative bg-gradient-to-r from-[#E0F2FE] via-white to-[#E0F2FE]">
+                  <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className=${["h-10 w-10 rounded-2xl text-white flex items-center justify-center shadow-sm", theme.primaryBg].join(" ")}>🌐</div>
+                      <div>
+                        <div className="font-extrabold text-lg">ImpactSphere</div>
+                        <div className="text-xs text-slate-600 -mt-1">Learn. Lead. Create Impact.</div>
+                      </div>
+                    </div>
+                    <div className="hidden md:flex items-center gap-2">
+                      ${TABS.map(t => html`
+                        <div key=${t.key} className="relative">
+                          <${Button} variant=${tab===t.key? 'soft':'ghost'} onClick=${()=>setTab(t.key)}>${t.label}<//>
+                        </div>
+                      `)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="hidden md:flex items-center gap-2">
+                        <span className=${theme.primaryText + " text-sm"}>🎨</span>
+                        <select className="rounded-2xl border border-slate-300 px-3 py-1 text-sm" value=${state.theme} onChange=${e=>dispatch({type:'SET_THEME', theme: e.target.value})}>
+                          ${Object.entries(THEMES).map(([k,v]) => html`<option key=${k} value=${k}>${v.name}</option>`)}
+                        </select>
+                      </div>
+                      <input className="hidden md:block rounded-2xl border border-slate-300 px-3 py-1 text-sm" value=${state.user.name} onChange=${e=>dispatch({type:'SET_NAME', name: e.target.value})} />
+                      <select className="rounded-2xl border border-slate-300 px-3 py-1 text-sm" value=${state.user.country} onChange=${e=>dispatch({type:'SET_COUNTRY', country: e.target.value})}>
+                        ${["Ecuador","Argentina","Peru","Colombia","Chile","Mexico","Brazil","Bolivia","Paraguay","Uruguay","Costa Rica"].map(c=> html`<option key=${c}>${c}</option>`)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </header>
+
+              <main className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+                ${tab === "dashboard" ? html`<${Dashboard} state=${state} />` : null}
+                ${tab === "learn" ? html`<${Learn} state=${state} dispatch=${dispatch} onCompleteLevel=${onCompleteLevel} />` : null}
+                ${tab === "build" ? html`<${Build} state=${state} dispatch=${dispatch} />` : null}
+                ${tab === "collab" ? html`<${Collaborate} state=${state} dispatch=${dispatch} />` : null}
+                ${tab === "impact" ? html`<${Impact} state=${state} />` : null}
+                ${tab === "leader" ? html`<${Leaderboard} state=${state} onSubmitWeekly=${onSubmitWeekly} />` : null}
+
+                <${Card}>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                    <span>Badges:</span>
+                    ${state.medals.length === 0 ? html`<span className="text-slate-500">— none yet —</span>` :
+                      state.medals.map((m,i)=> html`<span key=${i} className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1"><span>${m.icon}</span><span className="font-medium">${m.name}</span></span>`)}
+                    <span className="ml-auto">XP: <b>${state.xp}</b></span>
+                  </div>
+                <//>
+              </main>
+
+              <footer className="border-t border-slate-200 bg-white relative">
+                <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-slate-500">
+                  <div className="w-full h-px bg-gradient-to-r from-transparent via-[#A5D8FF] to-transparent mb-3"></div>
+                  <div className="flex items-center justify-between">
+                    <span>© ${new Date().getFullYear()} ImpactSphere – Prototype MVP</span>
+                    <span>Allies: Ímpetu • Municipio de Quito • Universities (TBD)</span>
+                  </div>
+                </div>
+              </footer>
+            </div>
+          <//>
+        `;
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(html`<${App} />`);
+    })();
+  </script>
+</body>
+</html>
